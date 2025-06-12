@@ -1,0 +1,128 @@
+import os
+from dotenv import load_dotenv
+import chainlit as cl
+from chainlit.types import ThreadDict
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+from process_user_files import handle_attachment
+from process_user_message import process_user_message
+from process_user_audios import process_audio_chunk, audio_answer
+from resume_chat import resume_chat
+from typing import Dict, Optional
+# from langchain.memory import ConversationBufferMemory
+
+
+load_dotenv(override=True)
+
+@cl.oauth_callback
+def oauth_callback(
+  provider_id: str,
+  token: str,
+  raw_user_data: Dict[str, str],
+  default_user: cl.User,
+) -> Optional[cl.User]:
+  return default_user
+
+
+@cl.on_chat_start
+async def on_chat_start():
+    """
+    Initialize the chat session with proper error handling.
+    """
+    try:
+        # Initialize session variables
+        # cl.user_session.set("memory", ConversationBufferMemory(return_messages=True))
+        cl.user_session.set("chain", None)
+        cl.user_session.set("audio_buffer", None)
+        cl.user_session.set("audio_mime_type", None)
+        
+        await cl.Message(content="Welcome! I'm your multimodal AI assistant. You can send me text, audio, images, PDFs, or Word documents!").send()
+        
+    except Exception as e:
+        print(f"Error initializing chat: {e}")
+        await cl.Message(content="Error initializing chat session. Please refresh and try again.").send()
+
+
+@cl.on_audio_start
+async def on_audio_start():
+    """Handler to manage mic button click event"""
+    cl.user_session.set("silent_duration_ms", 0)
+    cl.user_session.set("is_speaking", False)
+    cl.user_session.set("audio_chunks", [])
+    return True
+
+
+@cl.on_audio_chunk
+async def on_audio_chunk(chunk: cl.InputAudioChunk) -> None:
+    """
+    Handles incoming audio chunks during user input.
+
+    Receives audio chunks, stores the audio data in a buffer, and 
+    updates the session with the buffer.
+
+    Parameters:
+    ----------
+    audio_chunk : InputAudioChunk
+        The audio chunk to process.
+    """
+    await process_audio_chunk(chunk=chunk)
+
+
+@cl.on_audio_end
+async def on_audio_end(elements: list = None) -> None:
+    """
+    Processes the voice message and analyzes user intent.
+
+    Converts the audio to text using the selected chat profile. 
+    Handles document analysis (file attachments) and determines 
+    user intent for chatbot functionalities. Returns text and 
+    voice responses depending on attached file types and user intents.
+
+    Parameters:
+    ----------
+    elements : list
+        A list of elements related to the audio message.
+    """
+    # chat_profile = cl.user_session.get("chat_profile")
+    # model_name = await initialize_chat_profile(chat_profile=chat_profile)
+    await audio_answer(elements=elements or [])
+
+
+@cl.on_message
+async def on_message(user_message: cl.Message) -> None:
+    """
+    Processes text messages, file attachments, and user intent.
+
+    Handles text input, detects files in the user's message, 
+    and processes them. It also interacts with the LLM chat profile 
+    to respond based on the attached files and user intent for 
+    chatbot functionalities.
+
+    Parameters:
+    ----------
+    user_message : Message
+        The incoming message with potential file attachments.
+    """
+    await handle_attachment(user_message=user_message)
+    await process_user_message(user_message=user_message)
+
+
+@cl.data_layer
+def get_data_layer():
+    # ALTER TABLE steps ADD COLUMN "defaultOpen" BOOLEAN DEFAULT false;
+    return SQLAlchemyDataLayer(conninfo=os.environ["DATABASE_URL"])
+
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict) -> None:
+    """
+    Resumes archived chat conversations.
+
+    Retrieves previous chat threads to load them into memory and 
+    enables users to continue a conversation.
+
+    Parameters:
+    ----------
+    thread : ThreadDict
+        A dictionary containing the thread's information and messages.
+    """
+    await resume_chat(thread=thread)
