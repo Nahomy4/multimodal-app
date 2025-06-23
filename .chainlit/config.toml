@@ -83,16 +83,16 @@ edit_message = true
 
 [UI]
 # Name of the assistant.
-name = "Assistant"
+name = "Asistente Multimodal"
 
-# default_theme = "dark"
+default_theme = "dark"
 
-# layout = "wide"
+layout = "wide"
 
 # default_sidebar_state = "open"
 
 # Description of the assistant. This is used for HTML tags.
-# description = ""
+description = "Plataforma para la lectura de audio, video, documentos, texto."
 
 # Chain of Thought (CoT) display mode. Can be "hidden", "tool_call" or "full".
 cot = "full"
